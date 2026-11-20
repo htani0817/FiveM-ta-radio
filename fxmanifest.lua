@@ -5,7 +5,7 @@ lua54 'yes'
 name 'ta-radio'
 description 'Radio item on pma-voice: display name and channel input, member list on the right edge'
 author 'Tani'
-version '1.1.0'
+version '1.2.0'
 
 ui_page 'html/index.html'
 
@@ -13,6 +13,8 @@ files {
     'html/index.html',
     'html/style.css',
     'html/app.js',
+    'html/device-layout.css',
+    'html/img/radio-device.png',
     'stream/ta_radio.ytyp'
 }
 

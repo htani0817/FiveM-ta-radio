@@ -14,6 +14,9 @@ function RegisterNetEvent(name, fn) netEvents[name] = fn end
 function RegisterNUICallback(name, fn) nuiCbs[name] = fn end
 function RegisterCommand(name, fn) commands[name] = fn end
 function CreateThread(fn) threads[#threads + 1] = fn end
+local keymaps, executed = {}, {}
+function RegisterKeyMapping(cmd, desc, kind, key) keymaps[cmd] = { desc = desc, kind = kind, key = key } end
+function ExecuteCommand(cmd) executed[#executed + 1] = cmd end
 function Wait() end
 function GetCurrentResourceName() return 'ta-radio' end
 
@@ -60,7 +63,13 @@ local notes, voiceProps = {}, {}
 local exported = {}
 exports = setmetatable({
   qbx_core = { Notify = function(_, msg, kind) notes[#notes + 1] = { msg = msg, kind = kind } end },
-  ['pma-voice'] = { setVoiceProperty = function(_, k, v) voiceProps[k] = v end },
+  ['pma-voice'] = {
+    setVoiceProperty = function(_, k, v) voiceProps[k] = v end,
+    setMicClickOnVolume = function(_, v) voiceProps.clickOn = v end,
+    setMicClickOffVolume = function(_, v) voiceProps.clickOff = v end,
+    setRadioVolume = function(_, v) voiceProps.volume = v end,
+    setDisableRadioAnim = function(_, v) voiceProps.noAnim = v end,
+  },
 }, { __call = function(_, name, fn) exported[name] = fn end })
 
 local replies, awaited = {}, {}
@@ -86,6 +95,9 @@ end
 assert(load(SOURCES['client/main.lua']))()
 ok(netEvents['ta-radio:client:use'] ~= nil and exported.openForm ~= nil, 'アイテムのイベントと export を登録する')
 ok(commands.radiolist ~= nil, '一覧を出す・隠すコマンドを登録する')
+ok(keymaps['+ta_radio_talk'] and keymaps['+ta_radio_talk'].key == 'LMENU' and keymaps['+ta_radio_talk'].kind == 'keyboard', '送信キーを ta-radio のキー設定として出す（既定は Config.Talk.key）')
+commands['+ta_radio_talk']()
+ok(#executed == 0, '無線に入っていなければ送信しない')
 
 -- ================== 入力画面 ==================
 
@@ -93,6 +105,7 @@ replies['ta-radio:profile'] = { ok = true, name = 'ハル', channel = '102.5', o
 netEvents['ta-radio:client:use']()
 local m = lastMsg('openForm')
 ok(m and m.name == 'ハル' and m.channel == '102.5' and m.talkKey == '左 Alt', '保存した表示名と番号で入力画面を開く')
+ok(m.list and m.list.top == 0.22 and m.beep and m.beep.volume == 0.25, '一覧の置き場所と電子音の設定を NUI に渡す')
 ok(focus[1] == true and focus[2] == true, 'マウスとキーを NUI に渡す')
 
 -- 手に持つ無線機
@@ -145,11 +158,14 @@ replies['ta-radio:join'] = { ok = false, message = '無線 3 は決まった人�
 local res = nuiCall('join', { name = 'ハル', channel = '3' })
 ok(res.ok == false and res.field == 'channel' and focus[1] == true, '断られたら画面を開いたまま理由を返す')
 ok(voiceProps.radioEnabled == true, '合わせる前に pma-voice の無線を有効にする')
+ok(voiceProps.micClicks == true and voiceProps.clickOn == 10 and voiceProps.clickOff == 10, 'クリック音をオンにして音量を渡す（mm_radio が切ったままでも戻る）')
+ok(voiceProps.volume == 60 and voiceProps.noAnim == false, '無線の音量と送信中の動作を Config.Talk から渡す')
 ok(awaited[#awaited].data.channel == '3' and awaited[#awaited].data.name == 'ハル', '入力をそのままサーバーへ渡す')
 
 replies['ta-radio:join'] = { ok = true, channel = '102.5' }
 res = nuiCall('join', { name = 'ハル', channel = '102.5' })
 ok(res.ok and focus[1] == false, '合わせたら閉じる')
+ok(lastMsg('closeForm').result == 'joined', '合わせて閉じたことを NUI に伝える（音を変える）')
 ok(notes[#notes].msg == '無線 102.5 に合わせました', '合わせた番号を知らせる')
 res = nuiCall('join', { name = 'ハル', channel = '1' })
 ok(res.busy, '閉じたあとの送信は受け付けない')
@@ -159,6 +175,11 @@ ok(res.busy, '閉じたあとの送信は受け付けない')
 netEvents['ta-radio:client:list']({ channel = '102.5', members = { { id = 12, name = 'ハル', down = false }, { id = 4, name = '透', down = true } } })
 m = lastMsg('list')
 ok(m and m.self == 12 and m.maxRows == 12 and m.hidden == false and #m.members == 2, '一覧に自分の ID と上限を付けて渡す')
+
+-- 送信キー
+commands['+ta_radio_talk']()
+commands['-ta_radio_talk']()
+ok(executed[#executed - 1] == '+radiotalk' and executed[#executed] == '-radiotalk', '無線に入っていれば、押している間だけ pma-voice の送信を動かす')
 
 -- 話している
 netEvents['pma-voice:setTalkingOnRadio'](4, true)
@@ -210,6 +231,7 @@ netEvents['ta-radio:client:use']()
 replies['ta-radio:leave'] = { ok = true }
 res = nuiCall('leave')
 ok(res.ok and focus[1] == false and notes[#notes].msg == '無線から抜けました', '抜けるで閉じて知らせる')
+ok(lastMsg('closeForm').result == 'left', '抜けて閉じたことを NUI に伝える')
 netEvents['ta-radio:client:left']('無線を手放したので、無線から抜けました')
 ok(lastMsg('left') and notes[#notes].msg:find('手放した'), 'サーバーから抜けさせられたら一覧を消して知らせる')
 local n = #notes
@@ -221,6 +243,9 @@ before = count('talk')
 netEvents['pma-voice:setTalkingOnRadio'](4, true)
 handlers['pma-voice:radioActive'](true)
 ok(count('talk') == before, '無線に入っていなければ送らない')
+local ex = #executed
+commands['+ta_radio_talk']()
+ok(#executed == ex, '抜けたあとは送信キーを押しても送信しない')
 commands.radiolist()
 ok(notes[#notes].kind == 'error', '入っていなければ /radiolist は断る')
 handlers['ox_inventory:itemCount']('radio', 0)

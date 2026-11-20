@@ -1,6 +1,7 @@
 -- ta-radio クライアント側
--- アイテムを使うと、表示名と無線番号の入力画面を開く。合わせてよいかの判定はすべてサーバー側
+-- アイテムを使うと、右下から無線機が出てきて、その画面で表示名と無線番号を入れる。合わせてよいかの判定はすべてサーバー側
 -- 右の一覧はサーバーから届いた中身をそのまま NUI に渡す。話しているかは pma-voice の通知を拾う
+-- 声の送受信は pma-voice に任せるが、送信キー・音量・クリック音などの決まりは Config.Talk（ta-radio 側）で決める
 
 local formOpen = false
 local busy = false
@@ -16,8 +17,33 @@ local function nui(action, data)
     data = data or {}
     data.action = action
     data.scale = Config.UiScale
+    data.list = Config.List
+    data.beep = Config.Beep
     SendNUIMessage(data)
 end
+
+-- ================== 無線で話すときの決まり（Config.Talk） ==================
+
+-- 無線に入ったときに pma-voice へ渡す。mm_radio が切ったまま残したクリック音も、ここで戻る
+local function applyTalkSettings()
+    local t = Config.Talk
+    local voice = exports['pma-voice']
+    pcall(function() voice:setVoiceProperty('radioEnabled', true) end)
+    pcall(function() voice:setVoiceProperty('micClicks', t.clicks == true) end)
+    pcall(function() voice:setMicClickOnVolume(t.clickVolume) end)
+    pcall(function() voice:setMicClickOffVolume(t.clickVolume) end)
+    pcall(function() voice:setRadioVolume(t.volume) end)
+    pcall(function() voice:setDisableRadioAnim(t.animation ~= true) end)
+end
+
+-- 送信キーは ta-radio のキー設定として出す。押している間だけ pma-voice の送信を動かす
+RegisterCommand('+ta_radio_talk', function()
+    if onRadio then ExecuteCommand('+radiotalk') end
+end, false)
+RegisterCommand('-ta_radio_talk', function()
+    ExecuteCommand('-radiotalk')
+end, false)
+RegisterKeyMapping('+ta_radio_talk', '無線で話す（押している間）', 'keyboard', Config.Talk.key)
 
 local function isDown()
     return LocalPlayer.state.isDead == true or IsEntityDead(cache.ped)
@@ -52,13 +78,14 @@ local function putAwayRadio()
     prop = nil
 end
 
--- ================== 入力画面 ==================
+-- ================== 無線機の画面 ==================
 
-local function closeForm()
+-- result は NUI の音と動きに使う（'joined' 合わせた・'left' 抜けた・nil 閉じただけ）
+local function closeForm(result)
     if not formOpen then return end
     formOpen = false
     SetNuiFocus(false, false)
-    nui('closeForm')
+    nui('closeForm', { result = result })
     putAwayRadio()
 end
 
@@ -83,7 +110,7 @@ local function openForm()
         channel = res.channel,
         onRadio = res.onRadio,
         limits = res.limits,
-        talkKey = Config.TalkKeyLabel,
+        talkKey = Config.Talk.keyLabel,
     })
 end
 
@@ -95,12 +122,11 @@ RegisterNUICallback('join', function(data, cb)
     if busy or not formOpen then return cb({ ok = false, busy = true }) end
     data = type(data) == 'table' and data or {}
     busy = true
-    -- mm_radio などが無線を無効にしたままでも、声が届くように戻しておく
-    pcall(function() exports['pma-voice']:setVoiceProperty('radioEnabled', true) end)
+    applyTalkSettings()
     local res = lib.callback.await('ta-radio:join', false, { name = data.name, channel = data.channel })
     busy = false
     if res and res.ok then
-        closeForm()
+        closeForm('joined')
         notify(res.renamed and '表示名を変えました' or ('無線 %s に合わせました'):format(res.channel), 'success')
     end
     cb(res or { ok = false, message = '応答がありません' })
@@ -112,7 +138,7 @@ RegisterNUICallback('leave', function(_, cb)
     local res = lib.callback.await('ta-radio:leave', false)
     busy = false
     if res and res.ok then
-        closeForm()
+        closeForm('left')
         notify('無線から抜けました', 'inform')
     end
     cb(res or { ok = false, message = '応答がありません' })
@@ -127,6 +153,8 @@ end)
 
 RegisterNetEvent('ta-radio:client:list', function(payload)
     if type(payload) ~= 'table' then return end
+    -- 入った直後（再接続や pma-voice の再起動のあとも）に決まりを渡し直す
+    if not onRadio then applyTalkSettings() end
     onRadio = true
     payload.self = cache.serverId
     payload.maxRows = Config.MaxRows
@@ -167,7 +195,7 @@ RegisterCommand(Config.ToggleCommand, function()
     notify(hidden and '無線の一覧を隠しました' or '無線の一覧を出しました', 'inform')
 end, false)
 
--- ポーズメニューの間は一覧を消す。入力画面を開いたまま倒れたら閉じる
+-- ポーズメニューの間は一覧を消す。無線機の画面を開いたまま倒れたら閉じる
 CreateThread(function()
     while true do
         Wait((onRadio or formOpen) and 250 or 1000)
