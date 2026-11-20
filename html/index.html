@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ta-radio</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 右側中央の一覧。無線に入っている間だけ出る -->
+    <div class="hud-layer">
+        <aside id="hud" class="hud" aria-live="polite" hidden>
+            <header class="hud-head">
+                <div class="hud-channel">
+                    <span class="hud-label">無線番号</span>
+                    <span id="hudChannel" class="hud-figure"></span>
+                </div>
+                <span id="hudCount" class="hud-count"></span>
+            </header>
+            <ul id="hudList" class="hud-list"></ul>
+            <p id="hudMore" class="hud-more" hidden></p>
+        </aside>
+    </div>
+
+    <!-- アイテムを使ったときの入力画面 -->
+    <div id="form" class="form-layer" hidden>
+        <form id="formCard" class="form" autocomplete="off" novalidate>
+            <header class="form-head">
+                <h1 class="form-title">無線</h1>
+                <span id="formState" class="form-state"></span>
+            </header>
+
+            <label class="field">
+                <span class="field-row">
+                    <span class="field-label">表示名</span>
+                    <span id="nameCount" class="field-meta"></span>
+                </span>
+                <input id="nameInput" class="input" type="text" spellcheck="false">
+                <span class="field-hint">同じ番号の人の一覧に出る名前。次に使うときも残っています</span>
+            </label>
+
+            <label class="field">
+                <span class="field-row">
+                    <span class="field-label">無線番号</span>
+                </span>
+                <input id="channelInput" class="input input-channel" type="text" inputmode="decimal" spellcheck="false">
+                <span id="channelHint" class="field-hint"></span>
+            </label>
+
+            <p id="formError" class="form-error" role="alert" hidden></p>
+
+            <div class="actions">
+                <button id="joinBtn" class="btn btn-primary" type="submit">合わせる</button>
+                <button id="leaveBtn" class="btn btn-secondary" type="button" hidden>抜ける</button>
+            </div>
+
+            <footer class="form-foot">
+                <span class="hint"><kbd id="talkKey"></kbd>押している間だけ送信</span>
+                <span class="hint"><kbd>Esc</kbd>閉じる</span>
+            </footer>
+        </form>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

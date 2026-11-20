@@ -1,0 +1,483 @@
+/* ta-radio の NUI
+   方向: 業務用の無線機の液晶と、夜勤の指令台。ゲーム画面の端で、誰がいて誰が話しているかを一目で読ませる
+   土台は ta-nametag・ta-dealer と同じ落ち着いた灰色。色を持つのは「話している人」の琥珀色と「倒れた人」の赤だけ
+   決まった印は行の左の 3 本の信号の棒。ふだんは灰色、送信中は琥珀色、倒れると赤 */
+
+:root {
+    --font: 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', sans-serif;
+    --mono: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+
+    --surface: rgba(20, 22, 24, 0.84);
+    --card: #1c1f22;
+    --raised: #24282c;
+    --raised-hover: #2b3035;
+    --hairline: rgba(232, 236, 240, 0.08);
+    --hairline-strong: rgba(232, 236, 240, 0.14);
+
+    --text: #e8ebee;
+    --text-2: #a3abb3;
+    --muted: #868e96;
+
+    /* 送信中（無線機の液晶の色） */
+    --talk: #f0b45a;
+    --talk-bg: rgba(240, 180, 90, 0.16);
+    --talk-text: #f7d7a6;
+
+    /* 倒れている */
+    --down: #e5484d;
+    --down-bg: rgba(229, 72, 77, 0.18);
+    --down-text: #f29a9d;
+
+    /* 大きさの倍率。app.js が「画面の高さ / 1080 × config の倍率」を入れる */
+    --scale: 1;
+
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --dur-fast: 150ms;
+    --dur-enter: 320ms;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+}
+
+/* ================== 右の一覧 ================== */
+
+/* 外側の層で右寄せ・上下の中央にし、zoom は中の枠にだけ掛ける（位置の % が zoom でずれないように） */
+.hud-layer {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: calc(24px * var(--scale));
+    pointer-events: none;
+}
+
+.hud {
+    width: 248px;
+    zoom: var(--scale);
+    padding: 12px 8px 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    background: var(--surface);
+    transition: opacity var(--dur-enter) var(--ease);
+    animation: hud-in var(--dur-enter) var(--ease);
+}
+
+.hud.paused {
+    opacity: 0;
+}
+
+@keyframes hud-in {
+    from {
+        opacity: 0;
+        transform: translateX(8px);
+    }
+}
+
+.hud-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 8px 12px;
+    border-bottom: 1px solid var(--hairline);
+}
+
+.hud-channel {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.hud-label {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted);
+}
+
+.hud-figure {
+    font-family: var(--mono);
+    font-size: 28px;
+    line-height: 28px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+.hud-count {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-2);
+    white-space: nowrap;
+}
+
+.hud-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 8px;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 8px;
+    box-shadow: inset 2px 0 0 transparent;
+    transition: background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.row-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 14px;
+    color: var(--text);
+    transition: color var(--dur-fast) var(--ease);
+}
+
+.row-id {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    text-align: right;
+    min-width: 3ch;
+    transition: color var(--dur-fast) var(--ease);
+}
+
+/* 信号の棒。3 本を下揃えで並べる */
+.sig {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    width: 16px;
+    height: 12px;
+}
+
+.sig i {
+    display: block;
+    width: 3px;
+    border-radius: 1px;
+    background: var(--muted);
+    opacity: 0.45;
+    transition: background-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.sig i:nth-child(1) { height: 5px; }
+.sig i:nth-child(2) { height: 8px; }
+.sig i:nth-child(3) { height: 12px; }
+
+/* 自分の行。名前の後ろに小さく「自分」 */
+.row.self .row-name::after {
+    content: '自分';
+    margin-left: 8px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+/* 送信中 */
+.row.talk {
+    background: var(--talk-bg);
+    box-shadow: inset 2px 0 0 var(--talk);
+}
+
+.row.talk .row-name {
+    color: var(--talk-text);
+}
+
+.row.talk .row-id {
+    color: var(--talk-text);
+}
+
+.row.talk .sig i {
+    background: var(--talk);
+    opacity: 1;
+}
+
+/* 倒れている。行を赤くし、表示名に赤い横線 */
+.row.down {
+    background: var(--down-bg);
+    box-shadow: inset 2px 0 0 var(--down);
+}
+
+.row.down .row-name {
+    color: var(--down-text);
+    text-decoration: line-through;
+    text-decoration-color: var(--down);
+    text-decoration-thickness: 2px;
+}
+
+.row.down .row-id {
+    color: var(--down-text);
+}
+
+.row.down .sig i {
+    background: var(--down);
+    opacity: 0.8;
+}
+
+.hud-more {
+    padding: 8px 8px 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted);
+}
+
+/* ================== 入力画面 ================== */
+
+.form-layer {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.form {
+    width: 360px;
+    zoom: var(--scale);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 24px;
+    border: 1px solid var(--hairline);
+    border-radius: 16px;
+    background: var(--card);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    animation: form-in var(--dur-enter) var(--ease);
+}
+
+@keyframes form-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+.form-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.form-title {
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 500;
+}
+
+.form-state {
+    font-size: 13px;
+    color: var(--text-2);
+}
+
+.form-state b {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--talk);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.field-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.field-label {
+    font-size: 13px;
+    color: var(--text-2);
+}
+
+.field-meta {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+}
+
+.field-meta.over {
+    color: var(--down-text);
+}
+
+.field-hint {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted);
+}
+
+.input {
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: var(--raised);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    outline: none;
+    user-select: text;
+    transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+
+::selection {
+    background: rgba(240, 180, 90, 0.35);
+    color: var(--text);
+}
+
+.input:hover {
+    background: var(--raised-hover);
+}
+
+.input:focus {
+    border-color: var(--hairline-strong);
+    box-shadow: 0 0 0 2px rgba(240, 180, 90, 0.35);
+}
+
+.input-channel {
+    height: 48px;
+    font-family: var(--mono);
+    font-size: 24px;
+    font-variant-numeric: tabular-nums;
+}
+
+.input.invalid {
+    border-color: rgba(229, 72, 77, 0.6);
+}
+
+.form-error {
+    margin-top: -8px;
+    font-size: 13px;
+    color: var(--down-text);
+}
+
+.actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn {
+    flex: 1;
+    height: 40px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.btn:active {
+    transform: scale(0.98);
+}
+
+.btn:focus-visible {
+    outline: 2px solid rgba(240, 180, 90, 0.6);
+    outline-offset: 2px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.btn-primary {
+    background: var(--text);
+    color: #14161a;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.btn-primary:hover {
+    background: #ffffff;
+}
+
+.btn-secondary {
+    flex: 0 0 auto;
+    min-width: 96px;
+    border-color: var(--hairline);
+    background: var(--raised);
+    color: var(--text);
+}
+
+.btn-secondary:hover {
+    background: var(--raised-hover);
+}
+
+.form-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--hairline);
+}
+
+.hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted);
+}
+
+kbd {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 6px;
+    border: 1px solid var(--hairline-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--raised);
+    font-family: var(--font);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--text-2);
+}
+
+/* ================== ブラウザで見るとき（FiveM の外）だけ ================== */
+/* ゲーム画面の代わり。明るい空と暗い道路の両方に一覧が重なっても読めるかを見る */
+body.sample {
+    background:
+        linear-gradient(180deg, #9fb4c4 0%, #c9d3d9 38%, #6f7a72 39%, #3b4240 70%, #23282a 100%);
+}
