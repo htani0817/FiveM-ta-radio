@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ta-radio</title>
+    <link rel="stylesheet" href="device-layout.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- 右側中央の一覧。無線に入っている間だけ出る -->
+    <!-- 右上寄りの一覧。無線に入っている間だけ出る -->
     <div class="hud-layer">
         <aside id="hud" class="hud" aria-live="polite" hidden>
             <header class="hud-head">
@@ -22,43 +23,42 @@
         </aside>
     </div>
 
-    <!-- アイテムを使ったときの入力画面 -->
-    <div id="form" class="form-layer" hidden>
-        <form id="formCard" class="form" autocomplete="off" novalidate>
-            <header class="form-head">
-                <h1 class="form-title">無線</h1>
-                <span id="formState" class="form-state"></span>
-            </header>
+    <!-- アイテムを使うと右下から出てくる無線機。液晶で表示名と無線番号を入れ、下の 3 つのボタンで操作する -->
+    <div id="device" class="device" hidden>
+        <div class="device-body">
+            <img class="device-img" src="img/radio-device.png" alt="" draggable="false">
 
-            <label class="field">
-                <span class="field-row">
-                    <span class="field-label">表示名</span>
-                    <span id="nameCount" class="field-meta"></span>
-                </span>
-                <input id="nameInput" class="input" type="text" spellcheck="false">
-                <span class="field-hint">同じ番号の人の一覧に出る名前。次に使うときも残っています</span>
-            </label>
+            <form id="lcd" class="lcd" autocomplete="off" novalidate>
+                <div class="lcd-top">
+                    <span class="lcd-sig" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span id="lcdState" class="lcd-state"></span>
+                    <span class="lcd-ch">CH</span>
+                </div>
+                <input id="channelInput" class="lcd-channel" type="text" inputmode="decimal" spellcheck="false" aria-label="無線番号">
+                <label class="lcd-name">
+                    <span class="lcd-label">名前</span>
+                    <input id="nameInput" class="lcd-name-input" type="text" spellcheck="false" aria-label="表示名">
+                    <span id="nameCount" class="lcd-count"></span>
+                </label>
+                <p id="lcdMsg" class="lcd-msg" role="alert"></p>
+                <div class="lcd-soft" aria-hidden="true">
+                    <span id="soft1"></span>
+                    <span>閉じる</span>
+                    <span>合わせる</span>
+                </div>
+                <button type="submit" hidden></button>
+            </form>
 
-            <label class="field">
-                <span class="field-row">
-                    <span class="field-label">無線番号</span>
-                </span>
-                <input id="channelInput" class="input input-channel" type="text" inputmode="decimal" spellcheck="false">
-                <span id="channelHint" class="field-hint"></span>
-            </label>
+            <button id="key1" class="key key1" type="button" aria-label="抜ける"></button>
+            <button id="key2" class="key key2" type="button" aria-label="閉じる"></button>
+            <button id="key3" class="key key3" type="button" aria-label="合わせる"></button>
 
-            <p id="formError" class="form-error" role="alert" hidden></p>
-
-            <div class="actions">
-                <button id="joinBtn" class="btn btn-primary" type="submit">合わせる</button>
-                <button id="leaveBtn" class="btn btn-secondary" type="button" hidden>抜ける</button>
-            </div>
-
-            <footer class="form-foot">
+            <div class="device-hint">
                 <span class="hint"><kbd id="talkKey"></kbd>押している間だけ送信</span>
+                <span class="hint"><kbd>Enter</kbd>合わせる</span>
                 <span class="hint"><kbd>Esc</kbd>閉じる</span>
-            </footer>
-        </form>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

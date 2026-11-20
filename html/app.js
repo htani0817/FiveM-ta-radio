@@ -1,4 +1,4 @@
-// ta-radio の NUI。右側中央の一覧と、アイテムを使ったときの入力画面
+// ta-radio の NUI。右上寄りの一覧と、右下から出てくる無線機
 'use strict';
 
 const RES = typeof GetParentResourceName === 'function' ? GetParentResourceName() : null;
@@ -14,6 +14,8 @@ const state = {
     hidden: false,
     paused: false,
     onRadio: false,
+    open: false,
+    deviceOnRadio: false,
     limits: { name: 16, min: 1, max: 500 },
     sending: false,
 };
@@ -27,6 +29,8 @@ function post(name, data) {
     }).then((r) => r.json()).catch(() => null);
 }
 
+// ================== 大きさ・置き場所 ==================
+
 let lastScale = 1;
 function setScale(scale) {
     lastScale = Number(scale) || 1;
@@ -34,7 +38,53 @@ function setScale(scale) {
     document.documentElement.style.setProperty('--scale', String(Math.max(0.5, s)));
 }
 
-// ================== 右の一覧 ==================
+function setList(list) {
+    if (!list) return;
+    const root = document.documentElement.style;
+    if (Number.isFinite(Number(list.top))) root.setProperty('--list-top', `${Number(list.top) * 100}vh`);
+    if (Number.isFinite(Number(list.right))) root.setProperty('--list-right', `${Number(list.right)}px`);
+}
+
+// ================== 電子音 ==================
+// 無線機らしい短い矩形波。音のファイルは使わず、その場で作る
+
+const Beep = {
+    ctx: null,
+    enabled: true,
+    volume: 0.25,
+    set(cfg) {
+        if (!cfg) return;
+        this.enabled = cfg.enabled !== false;
+        if (Number.isFinite(Number(cfg.volume))) this.volume = Math.min(1, Math.max(0, Number(cfg.volume)));
+    },
+    tone(freq, dur, at = 0) {
+        if (!this.enabled || this.volume <= 0) return;
+        try {
+            this.ctx = this.ctx || new AudioContext();
+            const t = this.ctx.currentTime + at;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = freq;
+            // 矩形波は大きく聞こえるので 0.2 倍。始めと終わりを 5ms で絞り、ぷつっと鳴らないようにする
+            const peak = this.volume * 0.2;
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(peak, t + 0.005);
+            gain.gain.setValueAtTime(peak, t + dur - 0.005);
+            gain.gain.linearRampToValueAtTime(0, t + dur);
+            osc.connect(gain).connect(this.ctx.destination);
+            osc.start(t);
+            osc.stop(t + dur + 0.01);
+        } catch (e) { /* 音が出せない環境では鳴らさない */ }
+    },
+    open() { this.tone(1600, 0.05); this.tone(2100, 0.06, 0.07); },
+    key() { this.tone(2400, 0.03); },
+    ok() { this.tone(1800, 0.06); this.tone(2400, 0.09, 0.08); },
+    error() { this.tone(440, 0.16); },
+    close() { this.tone(2100, 0.05); this.tone(1500, 0.06, 0.07); },
+};
+
+// ================== 一覧 ==================
 // 表示名はほかの人が入力した文字なので、必ず textContent で入れる
 
 function el(tag, cls, text) {
@@ -50,12 +100,14 @@ function rowFor(m) {
     const sig = el('span', 'sig');
     sig.setAttribute('aria-hidden', 'true');
     sig.append(el('i'), el('i'), el('i'));
-    li.append(sig, el('span', 'row-name', m.name), el('span', 'row-id', String(m.id)));
+    const name = el('span', 'row-name');
+    name.append(el('span', 'row-text', m.name));
+    if (m.id === state.self) name.append(el('span', 'row-self', '自分'));
+    li.append(sig, name, el('span', 'row-id', String(m.id)));
     return li;
 }
 
 function paintRow(li, m) {
-    li.classList.toggle('self', m.id === state.self);
     li.classList.toggle('down', m.down === true);
     // 倒れた人は話せない（pma-voice が止める）。万一届いても赤を優先する
     li.classList.toggle('talk', m.down !== true && state.talking.has(m.id));
@@ -70,9 +122,8 @@ function renderList() {
     $('hudChannel').textContent = state.channel;
     $('hudCount').textContent = `${state.members.length}人`;
 
-    const list = $('hudList');
     const shown = state.members.slice(0, state.maxRows);
-    list.replaceChildren(...shown.map((m) => {
+    $('hudList').replaceChildren(...shown.map((m) => {
         const li = rowFor(m);
         paintRow(li, m);
         return li;
@@ -118,7 +169,7 @@ function onTalk(d) {
     paintTalk(id);
 }
 
-// ================== 入力画面 ==================
+// ================== 無線機 ==================
 
 function channelPattern(value) {
     return /^\d+(\.\d{0,2})?$/.test(value);
@@ -126,54 +177,68 @@ function channelPattern(value) {
 
 function updateCount() {
     const n = chars($('nameInput').value);
-    const meta = $('nameCount');
-    meta.textContent = `${n}/${state.limits.name}`;
-    meta.classList.toggle('over', n > state.limits.name);
+    $('nameCount').textContent = `${n}/${state.limits.name}`;
 }
 
-function showError(message, field) {
-    const box = $('formError');
-    box.hidden = !message;
-    box.textContent = message || '';
+function message(text, kind, field) {
+    const box = $('lcdMsg');
+    box.textContent = text || '';
+    box.classList.toggle('error', kind === 'error');
     $('nameInput').classList.toggle('invalid', field === 'name');
     $('channelInput').classList.toggle('invalid', field === 'channel');
 }
 
-function setFormState(onRadio, channel) {
-    const s = $('formState');
-    s.replaceChildren();
-    if (onRadio && channel) {
-        s.append(el('b', null, channel), document.createTextNode(' に参加中'));
-    }
-    $('leaveBtn').hidden = !onRadio;
+function idleMessage() {
+    message(`${state.limits.min}〜${state.limits.max}・小数は 2 桁まで`);
+}
+
+function setDeviceState(onRadio, channel) {
+    state.deviceOnRadio = onRadio;
+    $('lcdState').textContent = onRadio && channel ? `${channel} に参加中` : '待機中';
+    $('soft1').textContent = onRadio ? '抜ける' : '';
+    $('key1').disabled = !onRadio;
 }
 
 function openForm(d) {
     state.limits = Object.assign({ name: 16, min: 1, max: 500 }, d.limits || {});
     $('nameInput').value = String(d.name || '');
     $('channelInput').value = String(d.channel || '');
-    $('channelHint').textContent = `${state.limits.min}〜${state.limits.max}。小数は 2 桁まで`;
     $('talkKey').textContent = d.talkKey || '左 Alt';
-    setFormState(d.onRadio === true, d.channel);
-    showError(null);
+    setDeviceState(d.onRadio === true, d.channel);
+    idleMessage();
     updateCount();
     setSending(false);
-    $('form').hidden = false;
-    // 表示名が入っていれば番号へ、無ければ表示名へ
+
+    const device = $('device');
+    device.hidden = false;
+    document.body.classList.add('device-open');
+    state.open = true;
+    // hidden を外した次の描画で open を付け、下からせり上がらせる
+    requestAnimationFrame(() => requestAnimationFrame(() => device.classList.add('open')));
+    Beep.open();
+
     const first = $('nameInput').value ? $('channelInput') : $('nameInput');
     first.focus();
     first.select();
 }
 
-function closeForm() {
-    $('form').hidden = true;
-    document.activeElement && document.activeElement.blur();
+// result: 'joined' 合わせた・'left' 抜けた・それ以外は閉じただけ
+function closeForm(d) {
+    if (!state.open) return;
+    state.open = false;
+    const result = d && d.result;
+    if (result === 'joined') Beep.ok(); else Beep.close();
+    const device = $('device');
+    device.classList.remove('open');
+    document.body.classList.remove('device-open');
+    if (document.activeElement) document.activeElement.blur();
+    // 下がりきってから隠す（途中でまた開いたときは隠さない）
+    setTimeout(() => { if (!state.open) device.hidden = true; }, 500);
 }
 
 function setSending(on) {
     state.sending = on;
-    $('joinBtn').disabled = on;
-    $('leaveBtn').disabled = on;
+    for (const id of ['key1', 'key2', 'key3']) $(id).classList.toggle('busy', on);
 }
 
 // 画面の側でも先に確かめる（最後の判定はサーバー）
@@ -185,44 +250,58 @@ function validate() {
     if (!ch) return ['無線番号を入れてください', 'channel'];
     const n = Number(ch);
     if (!channelPattern(ch) || n < state.limits.min || n > state.limits.max) {
-        return [`無線番号は ${state.limits.min}〜${state.limits.max} で入れてください（小数は 2 桁まで）`, 'channel'];
+        return [`無線番号は ${state.limits.min}〜${state.limits.max} です`, 'channel'];
     }
     return null;
 }
 
+function fail(res) {
+    Beep.error();
+    message((res && res.message) || '応答がありません', 'error', res && res.field);
+}
+
 async function submit() {
-    if (state.sending) return;
+    if (state.sending || !state.open) return;
+    Beep.key();
     const bad = validate();
-    if (bad) return showError(bad[0], bad[1]);
-    showError(null);
+    if (bad) return fail({ message: bad[0], field: bad[1] });
+    message('合わせています…');
     setSending(true);
     const res = await post('join', { name: $('nameInput').value.trim(), channel: $('channelInput').value.trim() });
     setSending(false);
     if (res && res.busy) return;
-    if (!res || !res.ok) showError((res && res.message) || '応答がありません', res && res.field);
+    if (!res || !res.ok) fail(res);
 }
 
 async function leave() {
-    if (state.sending) return;
+    if (state.sending || !state.open || !state.deviceOnRadio) return;
+    Beep.key();
     setSending(true);
     const res = await post('leave', {});
     setSending(false);
     if (res && res.busy) return;
-    if (!res || !res.ok) showError((res && res.message) || '応答がありません');
+    if (!res || !res.ok) fail(res);
 }
 
-$('formCard').addEventListener('submit', (e) => {
+function requestClose() {
+    if (!state.open) return;
+    post('close', {});
+}
+
+$('lcd').addEventListener('submit', (e) => {
     e.preventDefault();
     submit();
 });
-$('leaveBtn').addEventListener('click', leave);
-$('nameInput').addEventListener('input', () => { updateCount(); showError(null); });
-$('channelInput').addEventListener('input', () => showError(null));
+$('key1').addEventListener('click', leave);
+$('key2').addEventListener('click', () => { Beep.key(); requestClose(); });
+$('key3').addEventListener('click', submit);
+$('nameInput').addEventListener('input', () => { updateCount(); idleMessage(); });
+$('channelInput').addEventListener('input', idleMessage);
 
 window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('form').hidden) {
+    if (e.key === 'Escape' && state.open) {
         e.preventDefault();
-        post('close', {});
+        requestClose();
     }
 });
 
@@ -231,9 +310,11 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('message', (e) => {
     const d = e.data || {};
     if (d.scale != null) setScale(d.scale);
+    setList(d.list);
+    Beep.set(d.beep);
     switch (d.action) {
         case 'openForm': return openForm(d);
-        case 'closeForm': return closeForm();
+        case 'closeForm': return closeForm(d);
         case 'list': return onList(d);
         case 'left': return onLeft();
         case 'talk': return onTalk(d);
@@ -259,34 +340,36 @@ const Sample = {
     post(name, data) {
         if (name === 'join') {
             if (String(data.channel) === '3') return { ok: false, message: '無線 3 は決まった人しか使えません', field: 'channel' };
-            closeForm();
+            closeForm({ result: 'joined' });
             onList({ channel: data.channel, members: [{ id: 12, name: data.name, down: false }, ...Sample.members.slice(1)], self: 12 });
             return { ok: true, channel: data.channel };
         }
-        if (name === 'leave') { closeForm(); onLeft(); return { ok: true }; }
-        if (name === 'close') { closeForm(); return {}; }
+        if (name === 'leave') { closeForm({ result: 'left' }); onLeft(); return { ok: true }; }
+        if (name === 'close') { closeForm({}); return {}; }
         return null;
     },
     run(scene) {
         document.body.classList.add('sample');
         setScale(1);
+        Beep.enabled = false;
         const list = (members) => onList({ channel: '102.5', members, self: 12, maxRows: 12 });
         const many = Array.from({ length: 16 }, (_, i) => ({ id: 40 + i, name: `隊員 ${i + 1}`, down: i === 5 }));
+        const limits = { name: 16, min: 1, max: 500 };
         const scenes = {
             list: () => { list(Sample.members); onTalk({ id: 4, on: true }); },
-            self: () => { list(Sample.members); onTalk({ id: 12, on: true }); },
+            downSelf: () => onList({ channel: '500', members: [{ id: 1, name: 'TANI', down: true }], self: 1 }),
             many: () => { onList({ channel: '7', members: many, self: 40, maxRows: 12 }); onTalk({ id: 42, on: true }); },
             long: () => list([{ id: 112, name: 'とても長い表示名を入れたときの人', down: false }, ...Sample.members]),
-            form: () => openForm({ name: '早瀬 晴', channel: '102.5', onRadio: false, limits: { name: 16, min: 1, max: 500 } }),
+            form: () => openForm({ name: '早瀬 晴', channel: '102.5', onRadio: false, limits }),
             formOn: () => {
                 list(Sample.members);
-                openForm({ name: '早瀬 晴', channel: '102.5', onRadio: true, limits: { name: 16, min: 1, max: 500 } });
+                openForm({ name: '早瀬 晴', channel: '102.5', onRadio: true, limits });
             },
             formError: () => {
-                openForm({ name: '早瀬 晴', channel: '3', onRadio: false, limits: { name: 16, min: 1, max: 500 } });
-                submit();
+                openForm({ name: '早瀬 晴', channel: '3', onRadio: false, limits });
+                setTimeout(submit, 600);
             },
-            formEmpty: () => openForm({ name: '', channel: '', onRadio: false, limits: { name: 16, min: 1, max: 500 } }),
+            formEmpty: () => openForm({ name: '', channel: '', onRadio: false, limits }),
         };
         (scenes[scene] || scenes.list)();
     },

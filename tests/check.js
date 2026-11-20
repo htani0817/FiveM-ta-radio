@@ -16,7 +16,7 @@ const known = new Set((
   // client の native
   'SendNUIMessage RegisterNUICallback SetNuiFocus IsPauseMenuActive IsEntityDead vec3 joaat ' +
   'TaskPlayAnim StopAnimTask CreateObject SetEntityCollision AttachEntityToEntity GetPedBoneIndex SetModelAsNoLongerNeeded ' +
-  'GetEntityCoords DoesEntityExist DeleteEntity ' +
+  'GetEntityCoords DoesEntityExist DeleteEntity RegisterKeyMapping ExecuteCommand ' +
   // fxmanifest
   'fx_version game lua54 name description author version ui_page files shared_scripts client_scripts server_scripts dependencies data_file'
 ).split(/\s+/));
@@ -40,7 +40,7 @@ for (const f of files) {
   console.log(f, 'OK', globals.size ? '未知のグローバル: ' + [...globals].join(', ') : '');
 }
 // NUI のファイルも BOM と CR を調べる
-for (const f of ['html/index.html', 'html/style.css', 'html/app.js', 'README.md']) {
+for (const f of ['html/index.html', 'html/style.css', 'html/app.js', 'html/device-layout.css', 'README.md']) {
   const src = fs.readFileSync(path.join(dir, f), 'utf8');
   if (src.charCodeAt(0) === 0xfeff) { console.log(f, 'BOM あり'); bad++; }
   if (src.includes('\r')) { console.log(f, 'CR あり'); bad++; }

@@ -6,3 +6,5 @@ node_modules/
 .DS_Store
 Thumbs.db
 desktop.ini
+# Blender の Python が作るキャッシュ
+__pycache__/

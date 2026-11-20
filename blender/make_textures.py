@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 無線機のテクスチャを作る（Pillow）
-# py -3 make_textures.py  → blender/tex/ta_radio_atlas.dds と確認用の .png、場所の表 layout.json
+# py -3.13 make_textures.py  → blender/tex/ta_radio_atlas.dds と確認用の .png、場所の表 layout.json
+#   ta_radio_atlas_ui.png は液晶を空にした版（NUI の無線機の絵を描くときだけ使う。液晶の中身は HTML で重ねる）
 # 色は ta-radio の画面と同じ考え方。本体は黒鉛色、色を持つのは液晶と表示灯の琥珀色だけ
 import json, os, random
 from PIL import Image, ImageDraw, ImageFont
@@ -60,21 +61,32 @@ for xx in range(0, 128, 8):
     d.rectangle((xx, 0, xx + 3, 31), fill=(44, 46, 50, 255))
 put("knurl", knurl, 352, 0)
 
-# 液晶 256x128。暗い琥珀の地に、明るい琥珀で無線番号・信号の棒・「CH」
-lcd = Image.new("RGBA", (256, 128), (34, 22, 8, 255))
-d = ImageDraw.Draw(lcd)
-d.rectangle((0, 0, 255, 127), outline=(16, 11, 5, 255), width=6)
+# 液晶 256x184（50x36mm の板に貼る）。暗い琥珀の地に、明るい琥珀で信号の棒・「CH」・無線番号・機種名・電池の目盛り
+# ゲームの中でほかの人から見える絵。持ち主の番号ではなく、見本の番号を出す
+LCD_BG = (34, 22, 8, 255)
 amber = (255, 190, 100, 255)
 dim = (92, 62, 26, 255)
-# 信号の棒 3 本（左上）
+
+
+def lcd_base():
+    im = Image.new("RGBA", (256, 184), LCD_BG)
+    ImageDraw.Draw(im).rectangle((0, 0, 255, 183), outline=(16, 11, 5, 255), width=6)
+    return im
+
+
+lcd = lcd_base()
+d = ImageDraw.Draw(lcd)
+# 信号の棒 3 本（左上）と「CH」（右上）
 for i, hgt in enumerate((10, 17, 24)):
     x0 = 18 + i * 9
     d.rectangle((x0, 40 - hgt, x0 + 5, 40), fill=amber)
 d.text((236, 14), "CH", font=SMALL, fill=amber, anchor="ra")
-d.text((128, 82), "102.5", font=MONO, fill=amber, anchor="mm")
-# 下の細い目盛り（電池の残り）
+d.text((128, 84), "102.5", font=MONO, fill=amber, anchor="mm")
+d.line((18, 122, 238, 122), fill=dim, width=2)
+d.text((128, 140), "TA-RADIO", font=SMALL, fill=amber, anchor="mm")
+# 下の目盛り（電池の残り）
 for i in range(5):
-    d.rectangle((22 + i * 14, 108, 32 + i * 14, 114), fill=amber if i < 4 else dim)
+    d.rectangle((22 + i * 14, 162, 32 + i * 14, 168), fill=amber if i < 4 else dim)
 put("lcd", lcd, 0, 64)
 
 # スピーカー 128x160。本体の色に横長の穴の列
@@ -102,4 +114,9 @@ put("key", key, 384, 128)
 json.dump(layout, open(os.path.join(OUT, "layout.json"), "w", encoding="utf-8", newline="\n"), indent=1)
 A.convert("RGB").save(os.path.join(OUT, "ta_radio_atlas.png"))
 A.convert("RGB").save(os.path.join(OUT, "ta_radio_atlas.dds"), pixel_format="DXT1")
+
+# NUI 用: 液晶だけ空にした版
+U = A.copy()
+U.alpha_composite(lcd_base(), (0, 64))
+U.convert("RGB").save(os.path.join(OUT, "ta_radio_atlas_ui.png"))
 print("ok", sorted(layout))
